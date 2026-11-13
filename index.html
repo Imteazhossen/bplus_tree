@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B+ Tree Control Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700&display=swap" rel="stylesheet">
+<style>
+  /* ==========================================================================
+     TOKENS — "engineering schematic" theme: a deep blueprint navy backdrop
+     with a single warm amber signal color. Internal vs. leaf nodes are told
+     apart by SHAPE (sharp chip vs. rounded card), not just color, so the
+     structure carries meaning rather than decoration.
+     ========================================================================== */
+  :root{
+    --bg:        #0d141d;
+    --bg-grid:   #101a25;
+    --panel:     #141e2b;
+    --panel-2:   #1a2635;
+    --border:    #263447;
+    --border-lo: #1c2836;
+    --text:      #e6edf5;
+    --text-dim:  #7e93a8;
+    --accent:    #e8a33d;
+    --accent-lo: #7a5a26;
+    --leaf:      #4fb0a5;
+    --leaf-lo:   #1f3a37;
+    --internal:  #6f93c2;
+    --internal-lo:#243146;
+    --danger:    #e0707a;
+    --danger-lo: #3a2226;
+    --success:   #6fbf7f;
+    --radius-lg: 10px;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+    /* Merriweather (a serif type family) drives the whole UI now -- body
+       copy, labels, buttons, headings -- with sane serif fallbacks in case
+       the Google Fonts request is ever blocked. --mono is kept only for the
+       tree visualizer's node boxes, where a fixed-width look still helps
+       read aligned keys at a glance. */
+    --serif: "Merriweather", Georgia, "Times New Roman", serif;
+    --sans: var(--serif);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/100% 28px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/28px 100%,
+      var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- header ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:16px; padding:18px 28px;
+    border-bottom:1px solid var(--border);
+    background:rgba(13,20,29,0.9);
+    position:sticky; top:0; z-index:10;
+    flex-wrap:wrap;
+  }
+  header h1{
+    font-size:17px; font-weight:600; margin:0; letter-spacing:0.2px;
+  }
+  header h1 span{ color:var(--accent); }
+  .header-stats{ display:flex; gap:10px; flex-wrap:wrap; }
+  .stat-chip{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    background:var(--panel-2); border:1px solid var(--border);
+    padding:5px 10px; border-radius:6px;
+  }
+  .stat-chip b{ color:var(--text); font-weight:600; }
+
+  /* ---------- layout ---------- */
+  .layout{
+    display:grid;
+    grid-template-columns:300px 1fr;
+    gap:20px;
+    padding:20px 28px 32px;
+    max-width:1500px;
+    margin:0 auto;
+  }
+  @media (max-width:900px){
+    .layout{ grid-template-columns:1fr; }
+  }
+
+  /* ---------- cards ---------- */
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:var(--radius-lg);
+    padding:16px;
+  }
+  .card + .card{ margin-top:16px; }
+  .card h2{
+    font-size:12px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--text-dim); margin:0 0 12px; font-weight:600;
+  }
+  .field{ margin-bottom:10px; }
+  .field label{
+    display:block; font-size:12px; color:var(--text-dim); margin-bottom:5px;
+  }
+  input[type=text]{
+    width:100%; background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); padding:9px 10px; border-radius:6px;
+    font-family:var(--mono); font-size:13px;
+  }
+  input[type=text]:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  select{
+    width:100%; background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); padding:8px 9px; border-radius:6px;
+    font-family:var(--serif); font-size:12.5px;
+  }
+  select:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  button{
+    font-family:var(--sans); font-size:13px; font-weight:600;
+    border-radius:6px; border:1px solid transparent; padding:9px 14px;
+    cursor:pointer; width:100%; transition:filter 0.12s ease;
+  }
+  button:hover{ filter:brightness(1.12); }
+  button:active{ filter:brightness(0.95); }
+  button:disabled{ opacity:0.5; cursor:not-allowed; filter:none; }
+  .btn-primary{ background:var(--accent); color:#241a08; }
+  .btn-danger{ background:var(--danger); color:#2a0e12; }
+  .btn-secondary{ background:var(--panel-2); color:var(--text); border-color:var(--border); }
+
+  /* status box under search */
+  .status-box{
+    margin-top:10px; padding:10px 12px; border-radius:6px;
+    font-family:var(--mono); font-size:12.5px; line-height:1.5;
+    border:1px solid var(--border-lo); background:var(--panel-2); color:var(--text-dim);
+    word-break:break-word;
+  }
+  .status-box.found{ border-color:#2f5c3a; background:#132018; color:#bfe8c8; }
+  .status-box.missing{ border-color:#5c2f36; background:#241318; color:#f0c2c7; }
+
+  /* meaning panel — shown under search results and next to insert/delete */
+  .meaning-box{
+    margin-top:8px; padding:10px 12px; border-radius:6px;
+    font-family:var(--serif); font-size:13px; line-height:1.55; font-style:italic;
+    border:1px solid var(--border-lo); background:var(--panel-2); color:var(--text);
+    display:none;
+  }
+  .meaning-box .meaning-word{ font-style:normal; font-weight:700; color:var(--accent); margin-right:6px; }
+  textarea{
+    width:100%; background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); padding:9px 10px; border-radius:6px;
+    font-family:var(--serif); font-size:13px; resize:vertical; min-height:56px;
+  }
+  textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  /* search path / location breakdown */
+  .path-steps{ display:flex; flex-direction:column; gap:4px; margin:2px 0 8px; }
+  .path-step{ display:flex; align-items:baseline; gap:6px; }
+  .path-step .step-arrow{ color:var(--text-dim); opacity:0.6; width:12px; flex-shrink:0; }
+  .path-step .step-label{ color:var(--text); }
+  .path-step .step-tag{
+    font-size:10px; text-transform:uppercase; letter-spacing:0.05em;
+    padding:1px 5px; border-radius:3px; margin-right:4px;
+  }
+  .path-step .step-tag.internal{ background:var(--internal-lo); color:var(--internal); border:1px solid var(--internal); }
+  .path-step .step-tag.leaf{ background:var(--leaf-lo); color:var(--leaf); border:1px solid var(--leaf); }
+  .path-summary{ border-top:1px solid var(--border-lo); margin-top:6px; padding-top:6px; color:var(--text); }
+  .path-summary b{ color:var(--accent); }
+
+  /* stats card */
+  .kv{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:12.5px; padding:4px 0; color:var(--text-dim); }
+  .kv b{ color:var(--text); }
+
+  /* ---------- visualizer ---------- */
+  .viz-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:16px; min-height:340px; display:flex; flex-direction:column;
+  }
+  .viz-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .viz-legend{ display:flex; gap:14px; font-size:11.5px; color:var(--text-dim); }
+  .legend-swatch{ display:inline-block; width:10px; height:10px; margin-right:5px; vertical-align:-1px; }
+  .viz-scroll{
+    overflow:auto; flex:1; padding:6px 2px 14px;
+    display:flex; flex-direction:column; gap:26px;
+  }
+  .tree-level{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; }
+  .tree-level::before{
+    content:attr(data-label); display:block; width:100%;
+    font-family:var(--mono); font-size:10.5px; color:var(--text-dim); opacity:0.7;
+  }
+  .node-box{
+    background:var(--internal-lo); border:1px solid var(--internal);
+    padding:8px 10px; min-width:92px; cursor:pointer;
+    font-family:var(--mono); font-size:11.5px; color:var(--text);
+    transition:transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .node-box.leaf{
+    background:var(--leaf-lo); border:1px solid var(--leaf); border-radius:14px;
+  }
+  .node-box.internal{ border-radius:3px; }
+  .node-box .node-type{ font-size:9.5px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.65; margin-bottom:4px; }
+  .node-box .node-keys{ line-height:1.5; word-break:break-all; }
+  .node-box:hover{ transform:translateY(-2px); }
+  .node-box.highlight{
+    box-shadow:0 0 0 2px var(--accent), 0 0 14px rgba(232,163,61,0.55);
+    transform:translateY(-2px);
+  }
+  .node-box .key-hit{ background:var(--accent); color:#241a08; padding:0 3px; border-radius:3px; }
+  .viz-empty{ color:var(--text-dim); font-size:13px; margin:auto; font-family:var(--mono); }
+  .viz-note{ font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic; }
+
+  /* ---------- inspector ---------- */
+  .inspector{ font-family:var(--serif); font-size:12.5px; color:var(--text-dim); white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto; }
+  .inspector b{ color:var(--text); font-weight:700; }
+
+  /* ---------- log console ---------- */
+  .log-card{ margin-top:20px; }
+  /* ---------- operation report ---------- */
+  .rpt{ font-family:var(--serif); color:var(--text); }
+  .rpt-empty{
+    padding:18px; border:1px dashed var(--border); border-radius:8px;
+    color:var(--text-dim); font-size:13px; line-height:1.75;
+  }
+  .rpt.fresh > *{ animation:rptIn .22s ease-out both; }
+  @keyframes rptIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce){ .rpt.fresh > *{ animation:none; } }
+
+  .rpt-head{
+    display:flex; justify-content:space-between; align-items:flex-start;
+    gap:14px; flex-wrap:wrap; padding-bottom:14px; border-bottom:1px solid var(--border-lo);
+  }
+  .rpt-title{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; min-width:0; }
+  .rpt-op{
+    font-size:12px; color:var(--text-dim); border:1px solid var(--border);
+    border-radius:4px; padding:3px 9px;
+  }
+  .rpt-word{ font-size:21px; font-weight:700; line-height:1.3; word-break:break-word; }
+  .rpt-status{ font-size:12px; font-weight:700; padding:3px 11px; border-radius:999px; border:1px solid; }
+  .rpt-status.ok{ color:var(--success); border-color:#2f5c3a; background:#132018; }
+  .rpt-status.miss, .rpt-status.err{ color:var(--danger); border-color:#5c2f36; background:#241318; }
+  .rpt-status.info{ color:var(--internal); border-color:#34486a; background:#182233; }
+  .rpt-time{ text-align:right; }
+  .rpt-time span{ display:block; font-size:11.5px; color:var(--text-dim); }
+  .rpt-time b{ display:block; margin-top:2px; font-family:var(--mono); font-size:22px; color:var(--accent); font-weight:600; }
+
+  .rpt-answer{
+    margin-top:14px; padding:12px 16px; background:var(--panel-2);
+    border-left:3px solid var(--accent); border-radius:0 6px 6px 0;
+  }
+  .rpt-answer-label{ font-size:11.5px; color:var(--text-dim); }
+  .rpt-answer p{ margin:5px 0 0; font-size:15px; line-height:1.75; font-style:italic; }
+
+  .rpt-note{ margin-top:12px; padding:9px 13px; border-radius:6px; border:1px solid; font-size:12.5px; line-height:1.65; }
+  .rpt-note.ok{ color:#bfe8c8; border-color:#2f5c3a; background:#132018; }
+  .rpt-note.miss, .rpt-note.err{ color:#f0c2c7; border-color:#5c2f36; background:#241318; }
+  .rpt-note.info{ color:var(--text); border-color:var(--border); background:var(--panel-2); }
+
+  .rpt-facts{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin:14px 0 0; }
+  .rpt-facts > div{ background:var(--panel-2); border:1px solid var(--border-lo); border-radius:6px; padding:9px 12px; }
+  .rpt-facts dt{ font-size:11.5px; color:var(--text-dim); }
+  .rpt-facts dd{ margin:3px 0 0; font-family:var(--mono); font-size:14px; font-weight:600; word-break:break-word; }
+
+  .rpt-section{ margin-top:18px; }
+  .rpt-section h3{ margin:0 0 9px; font-size:12.5px; font-weight:700; color:var(--text-dim); }
+
+  /* path: a staircase, one row per level, indented by depth. Squares are
+     internal nodes and rounded shapes are leaves, matching the visualizer. */
+  .rpt-path{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px; }
+  .rpt-step{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    align-self:flex-start; margin-left:calc(var(--d, 0) * 16px); padding:7px 14px; font-size:12px;
+    border:1px solid; background:var(--panel-2);
+  }
+  .rpt-step::before{ content:""; width:9px; height:9px; flex:none; background:currentColor; }
+  .rpt-step.internal{ color:var(--internal); border-color:#34486a; border-radius:3px; }
+  .rpt-step.leaf{ color:var(--leaf); border-color:#2b5a55; border-radius:9px; }
+  .rpt-step.leaf::before{ border-radius:50%; }
+  .rpt-step b{ color:var(--text); font-size:12.5px; min-width:78px; }
+  .rpt-step span{ color:var(--text-dim); font-family:var(--mono); }
+
+  .rpt-table{ width:100%; max-width:560px; border-collapse:collapse; font-size:13px; }
+  .rpt-table thead th{ font-size:11.5px; font-weight:400; color:var(--text-dim); text-align:right; padding:0 6px 6px; }
+  .rpt-table tbody th{ text-align:left; font-weight:400; padding:8px 6px; }
+  .rpt-table tbody th small{ display:block; font-size:11px; color:var(--text-dim); margin-top:1px; }
+  .rpt-table td{ padding:8px 6px; font-family:var(--mono); font-size:13.5px; text-align:right; }
+  .rpt-table tr{ border-top:1px solid var(--border-lo); }
+  .rpt-table td.was{ color:var(--text-dim); }
+  .rpt-table td.arrow{ width:26px; text-align:center; color:var(--text-dim); }
+  .rpt-table td.now{ font-weight:700; }
+  .rpt-table tr.chg td.now{ color:var(--accent); }
+  .rpt-table td.now em{
+    font-family:var(--serif); font-style:normal; font-weight:400; font-size:11px;
+    margin-left:9px; padding:1px 8px; border-radius:999px;
+    background:var(--accent-lo); color:#f6ddaa;
+  }
+  .log-console{
+    background:#0a0f16; border:1px solid var(--border-lo); border-radius:8px;
+    height:220px; overflow-y:auto; padding:10px 12px;
+    font-family:var(--mono); font-size:12px; line-height:1.65;
+  }
+  .log-line{ display:flex; gap:8px; }
+  .log-time{ color:#4a5b6d; flex-shrink:0; }
+  .log-msg.info{ color:var(--text-dim); }
+  .log-msg.success{ color:var(--success); }
+  .log-msg.error{ color:var(--danger); }
+  .log-msg.action{ color:var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>B<span>+</span>Tree Control Panel</h1>
+  <div class="header-stats" id="headerStats">
+    <span class="stat-chip">order <b id="statOrderHdr">–</b></span>
+    <span class="stat-chip">keys <b id="statSizeHdr">0</b></span>
+    <span class="stat-chip">height <b id="statHeightHdr">1</b></span>
+    <span class="stat-chip">last search <b id="statSearchTimeHdr">–</b></span>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <div class="sidebar">
+
+    <div class="card">
+      <h2>Insert Word</h2>
+      <div class="field">
+        <label for="insertWord">Word</label>
+        <input type="text" id="insertWord" placeholder="e.g. photosynthesis">
+      </div>
+      <div class="field">
+        <label for="insertMeaning">Meaning (optional)</label>
+        <textarea id="insertMeaning" placeholder="Leave blank to auto-fill from the built-in dictionary, if the word is one of the 20,000."></textarea>
+      </div>
+      <button class="btn-primary" id="insertBtn">Insert Word</button>
+    </div>
+
+    <div class="card">
+      <h2>Search</h2>
+      <div class="field">
+        <label for="searchWord">Word</label>
+        <input type="text" id="searchWord" placeholder="e.g. apple">
+      </div>
+      <button class="btn-secondary" id="searchBtn">Search</button>
+      <div class="status-box" id="searchStatus">No search yet.</div>
+      <div class="meaning-box" id="searchMeaning"></div>
+      <div class="status-box" id="searchPath" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Delete Word</h2>
+      <div class="field">
+        <label for="deleteWord">Word</label>
+        <input type="text" id="deleteWord" placeholder="e.g. banana">
+      </div>
+      <button class="btn-danger" id="deleteBtn">Delete Word</button>
+      <div class="meaning-box" id="deleteMeaning"></div>
+    </div>
+
+    <div class="card">
+      <h2>Tree Order</h2>
+      <div class="field">
+        <label for="orderInput">Order (max children per node, 3 – 2000)</label>
+        <input type="text" id="orderInput" inputmode="numeric" value="64">
+      </div>
+      <button class="btn-secondary" id="orderBtn">Apply Order</button>
+      <div class="viz-note" style="margin:8px 0 0; font-style:normal;">
+        Rebuilds the tree with the new order and re-inserts every word with its
+        meaning. Manual pointer edits are discarded.
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Bulk Dataset</h2>
+      <button class="btn-secondary" id="bulkBtn">Load Word Dataset</button>
+      <button class="btn-secondary" id="resetBtn" style="margin-top:8px;">Reset Tree</button>
+    </div>
+
+    <div class="card">
+      <h2>Tree Stats</h2>
+      <div class="kv"><span>Order</span><b id="statOrder">–</b></div>
+      <div class="kv"><span>Total keys</span><b id="statSize">0</b></div>
+      <div class="kv"><span>Height</span><b id="statHeight">1</b></div>
+      <div class="kv"><span>Root type</span><b id="statRoot">leaf</b></div>
+    </div>
+
+    <div class="card">
+      <h2>Selected Node</h2>
+      <div class="inspector" id="inspector">Click a node in the visualizer to inspect it.</div>
+    </div>
+
+    <div class="card">
+      <h2>Pointer Editor <span style="text-transform:none; letter-spacing:normal; color:var(--danger); font-weight:400;">(advanced)</span></h2>
+      <div class="viz-note" style="margin:0 0 10px; font-style:normal;">
+        Manually re-wire a pointer on the node selected above — click a node in
+        the visualizer first. This edits the live tree directly, so it can
+        break search correctness (wrong results, or even an infinite loop that
+        this app catches and reports as "not found"). Use <b>Reset Tree</b> to
+        recover. It exists to make pointers tangible, not for everyday use.
+      </div>
+      <div id="pointerEditorBody">
+        <div class="viz-empty" style="margin:0;">Select a node above to edit its pointers.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================ MAIN ============================ -->
+  <div class="main">
+
+    <div class="viz-card">
+      <div class="viz-header">
+        <h2 style="margin:0;">Tree Visualizer</h2>
+        <div class="viz-legend">
+          <span><span class="legend-swatch" style="background:var(--internal-lo);border:1px solid var(--internal);"></span>internal</span>
+          <span><span class="legend-swatch" style="background:var(--leaf-lo);border:1px solid var(--leaf);border-radius:5px;"></span>leaf</span>
+        </div>
+      </div>
+      <div class="viz-scroll" id="vizScroll">
+        <div class="viz-empty">Tree is empty — insert a word or load the dataset to begin.</div>
+      </div>
+      <div class="viz-note" id="vizNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>Operation Report</h2>
+      <div class="rpt" id="reportBox"><div class="rpt-empty">Run a search, insert, delete, order change or dataset load. The result, timing and tree state will appear here.</div></div>
+    </div>
+
+    <div class="card log-card">
+      <h2>Operation Log</h2>
+      <div class="log-console" id="logConsole"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Engine: defines BPlusTree, BPlusTreeNode, WORD_BANK, generateWordList
+     (loaded first so the UI script below can reference them). -->
+<script src="bplus_tree.js"></script>
+
+<script>
+/* ============================================================================
+   UI INTEGRATION LAYER
+   Everything below is DOM wiring around the BPlusTree engine from
+   bplus_tree.js. The engine itself has no idea a UI exists — it just exposes
+   plain JS objects (root, keys[], children[], leaf flag) that we read to
+   draw the picture, plus insert/search/delete methods we call directly.
+   ============================================================================ */
+
+// A single tree instance lives for the page's lifetime. `window.BPlusTree`
+// comes from bplus_tree.js (see its browser-export guard at the bottom).
+let currentOrder = 64;
+let tree = new BPlusTree(currentOrder);
+
+// Rendering a node needs a way to go back from a "logical" node object (as
+// stored inside the tree) to the actual DOM element we drew for it, so a
+// search can highlight the right boxes after the fact. A Map keyed by object
+// reference is perfect for this — the tree's node objects are stable between
+// renders as long as no insert/delete happens in between.
+let nodeElementMap = new Map();
+
+// Parallel array of every node currently in the tree, in the same BFS order
+// as the visualizer draws them, rebuilt on every renderTree(). Each node
+// gets a stable-for-this-render `_vizId` (its index in this array) stamped
+// directly onto the node object -- the Pointer Editor uses these IDs to let
+// a person pick "point this pointer at node #N" from a plain <select>.
+let allNodes = [];
+
+// Cache DOM references once up front instead of re-querying on every call.
+const el = (id) => document.getElementById(id);
+const insertWordEl = el('insertWord'), insertMeaningEl = el('insertMeaning'), insertBtn = el('insertBtn');
+const searchWordEl = el('searchWord'), searchBtn = el('searchBtn'), searchStatus = el('searchStatus'), searchPath = el('searchPath'), searchMeaning = el('searchMeaning');
+const deleteWordEl = el('deleteWord'), deleteBtn = el('deleteBtn'), deleteMeaning = el('deleteMeaning');
+const bulkBtn = el('bulkBtn'), resetBtn = el('resetBtn');
+const vizScroll = el('vizScroll'), vizNote = el('vizNote'), inspector = el('inspector');
+const logConsole = el('logConsole'), reportBox = el('reportBox');
+const orderInput = el('orderInput'), orderBtn = el('orderBtn');
+
+// ----------------------------------------------------------------------------
+// LOGGING — every operation writes a timestamped line into the terminal panel.
+// ----------------------------------------------------------------------------
+function log(message, type = 'info') {
+  const row = document.createElement('div');
+  row.className = 'log-line';
+  const time = new Date().toLocaleTimeString();
+  row.innerHTML = `<span class="log-time">${time}</span><span class="log-msg ${type}">${message}</span>`;
+  logConsole.appendChild(row);
+  logConsole.scrollTop = logConsole.scrollHeight; // auto-scroll to newest entry
+}
+
+// ----------------------------------------------------------------------------
+// STATS — mirrors tree.size / tree.height() / root type into both the header
+// chips and the sidebar stats card.
+// ----------------------------------------------------------------------------
+function renderStats() {
+  const height = tree.height();
+  const rootType = tree.root.leaf ? 'leaf' : 'internal';
+  el('statOrder').textContent = tree.order;
+  el('statSize').textContent = tree.size;
+  el('statHeight').textContent = height;
+  el('statRoot').textContent = rootType;
+  el('statOrderHdr').textContent = tree.order;
+  el('statSizeHdr').textContent = tree.size;
+  el('statHeightHdr').textContent = height;
+}
+
+// ----------------------------------------------------------------------------
+// TREE VISUALIZER
+// Walks the tree breadth-first (level by level) purely by reading the
+// engine's own public fields: node.leaf, node.keys, node.children. Nothing
+// here mutates the tree — it only *reads* the structure to build DOM.
+//
+// Large leaves/levels are truncated in the on-screen preview (showing a
+// handful of keys plus a "+N more" marker) so a 20,000-word bulk load stays
+// fast to render; clicking a node still reveals its full contents via the
+// inspector panel below.
+// ----------------------------------------------------------------------------
+const MAX_KEYS_SHOWN = 6;   // keys previewed directly on a node's box
+const MAX_NODES_PER_LEVEL = 60; // safety cap so a huge fanout stays scrollable
+
+function renderTree() {
+  nodeElementMap.clear();
+  allNodes = [];
+  vizScroll.innerHTML = '';
+  vizNote.textContent = '';
+
+  if (tree.size === 0) {
+    vizScroll.innerHTML = '<div class="viz-empty">Tree is empty — insert a word or load the dataset to begin.</div>';
+    return;
+  }
+
+  // BFS collects nodes level-by-level so each row in the visualizer
+  // represents one depth of the tree, root at the top.
+  let currentLevel = [tree.root];
+  let depth = 0;
+  let truncatedSomewhere = false;
+  // Safety cap: normally a B+ tree of this size is only 2-4 levels deep, so
+  // 200 is enormous headroom. It only matters once the manual Pointer Editor
+  // lets a person wire a child pointer back up toward the root -- without a
+  // cap, that cycle would make this loop run forever and hang the tab.
+  const MAX_LEVELS = 200;
+  let cycleSuspected = false;
+
+  while (currentLevel.length > 0) {
+    if (depth >= MAX_LEVELS) { cycleSuspected = true; break; }
+    const row = document.createElement('div');
+    row.className = 'tree-level';
+    row.dataset.label = depth === 0 ? 'root' : (currentLevel[0].leaf ? 'leaves' : `level ${depth}`);
+
+    const shown = currentLevel.slice(0, MAX_NODES_PER_LEVEL);
+    if (currentLevel.length > shown.length) truncatedSomewhere = true;
+
+    const nextLevel = [];
+    for (const node of shown) {
+      node._vizId = allNodes.length;
+      allNodes.push(node);
+      row.appendChild(buildNodeBox(node));
+      if (!node.leaf) nextLevel.push(...node.children);
+    }
+    vizScroll.appendChild(row);
+    currentLevel = nextLevel;
+    depth++;
+  }
+
+  if (truncatedSomewhere) {
+    vizNote.textContent = `Showing up to ${MAX_NODES_PER_LEVEL} nodes per row for readability — full structure is still used by every operation.`;
+  }
+  if (cycleSuspected) {
+    vizNote.textContent = (vizNote.textContent ? vizNote.textContent + ' ' : '')
+      + `Stopped after ${MAX_LEVELS} levels — this usually means a manually-edited pointer created a cycle. Use "Reset Tree" to recover.`;
+  }
+}
+
+// Builds one node's visual box and registers it in nodeElementMap for later
+// highlighting. Internal nodes render as sharp-cornered "routing chips";
+// leaves render as rounded "data cards" — shape carries the leaf/internal
+// distinction so it reads correctly even without color.
+function buildNodeBox(node) {
+  const box = document.createElement('div');
+  box.className = 'node-box ' + (node.leaf ? 'leaf' : 'internal');
+
+  const label = document.createElement('div');
+  label.className = 'node-type';
+  label.textContent = node.leaf ? `leaf · ${node.keys.length} keys` : `internal · ${node.keys.length} keys`;
+  box.appendChild(label);
+
+  const keysLine = document.createElement('div');
+  keysLine.className = 'node-keys';
+  const preview = node.keys.slice(0, MAX_KEYS_SHOWN).join(', ');
+  const extra = node.keys.length > MAX_KEYS_SHOWN ? ` +${node.keys.length - MAX_KEYS_SHOWN} more` : '';
+  keysLine.textContent = node.keys.length ? preview + extra : '(empty)';
+  box.appendChild(keysLine);
+
+  box.addEventListener('click', () => showInspector(node));
+  nodeElementMap.set(node, box);
+  return box;
+}
+
+// Sidebar "Selected Node" panel — shows the FULL (untruncated) contents of
+// whatever node was clicked, since the on-canvas preview is intentionally
+// truncated for large nodes.
+function showInspector(node) {
+  const lines = [];
+  lines.push(`type: ${node.leaf ? 'leaf' : 'internal'}`);
+  lines.push(`keys (${node.keys.length}): ${node.keys.join(', ') || '(none)'}`);
+  if (node.leaf) {
+    lines.push(`ordinal: leaf #${tree.leafOrdinal(node)} of ${tree.leafCount()}`);
+    lines.push(node.next ? 'next leaf: linked ->' : 'next leaf: (end of chain)');
+    lines.push('');
+    lines.push('meanings in this leaf:');
+    // node.children[i] holds the meaning string for node.keys[i] (leaves
+    // only -- see the class docs at the top of bplus_tree.js). Truncate
+    // each definition so a full leaf of ~30 words stays scannable.
+    node.keys.forEach((k, i) => {
+      const m = node.children[i] || '(no meaning)';
+      const short = m.length > 90 ? m.slice(0, 90) + '…' : m;
+      lines.push(`  • ${k} — ${short}`);
+    });
+  } else {
+    lines.push(`children: ${node.children.length} pointers`);
+  }
+  inspector.textContent = lines.join('\n');
+  renderPointerEditor(node);
+}
+
+// ----------------------------------------------------------------------------
+// POINTER EDITOR (advanced) — lets a person manually re-wire one of the
+// tree's actual pointers: a child slot on an internal node, or a leaf's
+// `next` chain link. Every node currently on screen got a stable `_vizId`
+// stamped on it by renderTree()'s BFS pass (see `allNodes` above), so the
+// dropdowns below just list "#id [type] first…last (N keys)" for every node
+// in the tree and let the person pick a *different* target for one slot.
+//
+// This directly mutates the live tree object graph -- it doesn't go through
+// insert/delete, so it can absolutely break the B+ tree invariants (wrong
+// search results, an unbalanced structure, or even a pointer cycle). That's
+// the point: it makes "a pointer is just a reference to another node object"
+// concrete and pokeable. The cycle guards added to search()/describeSearch()/
+// leafOrdinal()/leafCount()/rangeScan() in bplus_tree.js, plus renderTree()'s
+// MAX_LEVELS cap above, exist specifically so that poking it can't actually
+// freeze the tab -- worst case, operations start reporting "not found" until
+// you hit Reset Tree.
+// ----------------------------------------------------------------------------
+function nodeOptionLabel(n) {
+  const type = n.leaf ? 'leaf' : 'internal';
+  let preview = '(empty)';
+  if (n.keys.length === 1) preview = String(n.keys[0]);
+  else if (n.keys.length > 1) preview = `${n.keys[0]}…${n.keys[n.keys.length - 1]}`;
+  return `#${n._vizId} [${type}] ${preview} (${n.keys.length} keys)`;
+}
+
+function renderPointerEditor(node) {
+  const body = el('pointerEditorBody');
+  if (!node || !allNodes.includes(node)) {
+    body.innerHTML = '<div class="viz-empty" style="margin:0;">Select a node above to edit its pointers.</div>';
+    return;
+  }
+
+  const optionsHtml = allNodes.map((n) => `<option value="${n._vizId}">${nodeOptionLabel(n)}</option>`).join('');
+
+  if (node.leaf) {
+    body.innerHTML = `
+      <div class="kv"><span>Editing</span><b>${nodeOptionLabel(node)}</b></div>
+      <div class="field" style="margin-top:8px;">
+        <label for="ptrNextSelect">next (leaf-chain pointer)</label>
+        <select id="ptrNextSelect">
+          <option value="">(none — end of chain)</option>
+          ${optionsHtml}
+        </select>
+      </div>
+      <button class="btn-secondary" id="applyPointerBtn" style="margin-top:8px;">Apply Pointer Change</button>
+    `;
+    el('ptrNextSelect').value = node.next && allNodes.includes(node.next) ? String(node.next._vizId) : '';
+  } else {
+    const rows = node.children.map((child, i) => {
+      const label = i === 0
+        ? `children[0] (keys &lt; "${node.keys[0]}")`
+        : i === node.keys.length
+          ? `children[${i}] (keys &gt;= "${node.keys[i - 1]}")`
+          : `children[${i}] ("${node.keys[i - 1]}" &le; keys &lt; "${node.keys[i]}")`;
+      return `
+        <div class="field" style="margin-top:8px;">
+          <label>${label}</label>
+          <select class="ptrChildSelect" data-child-index="${i}">${optionsHtml}</select>
+        </div>`;
+    }).join('');
+    body.innerHTML = `
+      <div class="kv"><span>Editing</span><b>${nodeOptionLabel(node)}</b></div>
+      ${rows}
+      <button class="btn-secondary" id="applyPointerBtn" style="margin-top:8px;">Apply Pointer Change(s)</button>
+    `;
+    node.children.forEach((child, i) => {
+      const sel = body.querySelector(`.ptrChildSelect[data-child-index="${i}"]`);
+      if (sel) sel.value = allNodes.includes(child) ? String(child._vizId) : '';
+    });
+  }
+
+  el('applyPointerBtn').addEventListener('click', () => applyPointerEdits(node));
+}
+
+function applyPointerEdits(node) {
+  if (node.leaf) {
+    const raw = el('ptrNextSelect').value;
+    node.next = raw === '' ? null : allNodes[Number(raw)];
+    log(`Manually set <b>leaf #${node._vizId}</b>.next → ${raw === '' ? '(none)' : '#' + raw}.`, 'action');
+  } else {
+    const selects = document.querySelectorAll('.ptrChildSelect');
+    let changed = 0;
+    selects.forEach((sel) => {
+      const i = Number(sel.dataset.childIndex);
+      const targetId = Number(sel.value);
+      if (node.children[i] !== allNodes[targetId]) changed++;
+      node.children[i] = allNodes[targetId];
+    });
+    log(`Manually updated ${changed} child pointer(s) on <b>internal node #${node._vizId}</b>. Tree invariants are no longer guaranteed.`, changed ? 'action' : 'info');
+  }
+  renderTree();
+  renderStats();
+  // If the edited node still appears after the re-render (it will, unless
+  // it became unreachable from the root), re-open its inspector/editor so
+  // the person can immediately see the effect and keep iterating.
+  if (allNodes.includes(node)) showInspector(node);
+  else { inspector.textContent = 'This node is no longer reachable from the root.'; renderPointerEditor(null); }
+}
+
+// ----------------------------------------------------------------------------
+// SEARCH PATH HIGHLIGHTING & LOCATION REPORTING
+// The engine itself (tree.describeSearch) computes the exact root-to-leaf
+// trail, so the UI just walks that trail to (a) cascade a highlight down the
+// visualizer, (b) reveal the exact word inside its leaf even if the leaf's
+// on-screen preview is normally truncated, and (c) print a plain-English
+// breadcrumb of precisely where the word lives (or would live).
+// ----------------------------------------------------------------------------
+function highlightPath(info) {
+  info.path.forEach((step, i) => {
+    const box = nodeElementMap.get(step.node);
+    if (!box) return;
+    // Staggered delay cascades the highlight down the tree, root to leaf —
+    // one deliberate animated moment rather than a static highlight.
+    setTimeout(() => {
+      box.classList.add('highlight');
+      setTimeout(() => box.classList.remove('highlight'), 1800);
+    }, i * 160);
+  });
+
+  // Reveal the word's EXACT position inside the leaf's box, windowed around
+  // it so it's visible even when the leaf holds far more keys than the
+  // normal MAX_KEYS_SHOWN preview would show. `info.leaf` is null when
+  // describeSearch() bailed out on a manually-created pointer cycle (see
+  // bplus_tree.js) — nothing to highlight in that case.
+  const leaf = info.leaf;
+  if (!leaf) return;
+  const box = nodeElementMap.get(leaf);
+  if (box) {
+    const keysLine = box.querySelector('.node-keys');
+    const centerIdx = info.found ? info.leafIndex : clampInsertIndex(leaf, info.key);
+    const radius = 2;
+    const start = Math.max(0, centerIdx - radius);
+    const end = Math.min(leaf.keys.length, centerIdx + radius + 1);
+    const parts = [];
+    if (start > 0) parts.push(`&hellip; +${start}`);
+    for (let idx = start; idx < end; idx++) {
+      const isHit = info.found && idx === info.leafIndex;
+      parts.push(isHit ? `<span class="key-hit">${leaf.keys[idx]}</span>` : leaf.keys[idx]);
+    }
+    if (end < leaf.keys.length) parts.push(`+${leaf.keys.length - end} &hellip;`);
+    keysLine.innerHTML = leaf.keys.length ? parts.join(', ') : '(empty)';
+    // Bring the exact leaf into view so "which node" is visually obvious too.
+    box.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  }
+}
+
+// Where a NOT-FOUND key would be inserted within its leaf's key array —
+// used only to center the preview window sensibly on a miss.
+function clampInsertIndex(leaf, key) {
+  let pos = 0;
+  while (pos < leaf.keys.length && leaf.keys[pos] < key) pos++;
+  return pos;
+}
+
+// Builds the plain-English "exactly where" breadcrumb shown under the
+// search box: one line per step of the descent, plus a summary of the
+// leaf's ordinal position and the key's position within it.
+function renderSearchPath(info) {
+  const lines = [];
+  info.path.forEach((step, i) => {
+    const isRoot = i === 0;
+    const tag = step.type === 'leaf'
+      ? `<span class="step-tag leaf">leaf</span>`
+      : `<span class="step-tag internal">internal</span>`;
+    const where = isRoot ? 'root' : `depth ${step.depth}`;
+    let detail = `${step.node.keys.length} keys`;
+    if (step.type === 'internal') {
+      detail += ` &middot; followed child #${step.childIndex + 1} of ${step.node.children.length}`;
+    }
+    lines.push(
+      `<div class="path-step">` +
+        `<span class="step-arrow">${isRoot ? '' : '&rarr;'}</span>` +
+        `${tag}<span class="step-label">${where} &mdash; ${detail}</span>` +
+      `</div>`
+    );
+  });
+
+  const summary = info.broken
+    ? `Search aborted: this descent hit ${10000}+ steps without reaching a leaf, which means a pointer cycle exists (almost certainly from the Pointer Editor). Use <b>Reset Tree</b> to recover.`
+    : info.found
+      ? `Found in <b>leaf #${info.leafOrdinal}</b> of ${info.leafCount} &mdash; key position <b>${info.leafIndex + 1}</b> of ${info.leaf.keys.length} in that leaf.`
+      : `Not present. It would belong in <b>leaf #${info.leafOrdinal}</b> of ${info.leafCount}, between its neighboring keys there.`;
+
+  searchPath.innerHTML = `<div class="path-steps">${lines.join('')}</div><div class="path-summary">${summary}</div>`;
+  searchPath.style.display = 'block';
+}
+
+// Formats a millisecond duration for display: microseconds for anything
+// sub-millisecond (typical here), otherwise milliseconds.
+function formatDuration(ms) {
+  if (ms < 1) return `${(ms * 1000).toFixed(1)} µs`;
+  if (ms < 10) return `${ms.toFixed(3)} ms`;
+  return `${ms.toFixed(2)} ms`;
+}
+
+// ----------------------------------------------------------------------------
+// OPERATION REPORT
+// After every search / insert / delete / order change / dataset load, the
+// "Operation Report" card is redrawn from a small structured model:
+//
+//   { op, word, status, tone, time:{label,value}, answer:{label,word,text},
+//     note, facts:[{label,value}], path:info, state:{before, after} }
+//
+// Layout, top to bottom: what happened + how long it took, the answer (the
+// meaning), key facts, the root-to-leaf path, and a before/after tree table
+// in which every changed number is highlighted. Order, total keys, height and
+// leaf count are always shown.
+// ----------------------------------------------------------------------------
+const esc = (v) => String(v)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function snapshot() {
+  return { order: tree.order, keys: tree.size, height: tree.height(), leaves: tree.leafCount() };
+}
+
+function renderPathChips(info) {
+  const steps = info.path.map((step, i) => {
+    const kind = step.type === 'leaf' ? 'leaf' : 'internal';
+    const name = i === 0 ? (kind === 'leaf' ? 'Root leaf' : 'Root') : (kind === 'leaf' ? 'Leaf' : 'Internal');
+    const detail = step.type === 'internal'
+      ? `child ${step.childIndex + 1} of ${step.node.children.length}`
+      : `${step.node.keys.length} keys`;
+    return `<li class="rpt-step ${kind}" style="--d:${Math.min(step.depth, 10)}"><b>${name}</b><span>depth ${step.depth}</span><span>${detail}</span></li>`;
+  });
+  return `<ol class="rpt-path">${steps.join('')}</ol>`;
+}
+
+function stateTable(state) {
+  const { before, after } = state;
+  const rows = [
+    ['Order', 'order', `max ${after.order - 1} keys per node`],
+    ['Total keys', 'keys', ''],
+    ['Height', 'height', ''],
+    ['Leaves', 'leaves', ''],
+  ];
+  const tagFor = (key) => {
+    if (!before || before[key] === after[key]) return '';
+    if (key === 'height') return after.height > before.height ? 'taller' : 'shorter';
+    if (key === 'order') return 'rebuilt';
+    return after[key] > before[key] ? `+${after[key] - before[key]}` : `${after[key] - before[key]}`;
+  };
+  const body = rows.map(([label, key, hint]) => {
+    const changed = before && before[key] !== after[key];
+    const tag = tagFor(key);
+    const cells = before
+      ? `<td class="was">${before[key]}</td><td class="arrow">${changed ? '→' : ''}</td><td class="now">${after[key]}${tag ? `<em>${tag}</em>` : ''}</td>`
+      : `<td class="now" colspan="3">${after[key]}</td>`;
+    return `<tr class="${changed ? 'chg' : ''}"><th scope="row">${label}${hint ? `<small>${hint}</small>` : ''}</th>${cells}</tr>`;
+  }).join('');
+  const head = before ? '<thead><tr><th></th><th>Before</th><th></th><th>After</th></tr></thead>' : '';
+  return `<table class="rpt-table">${head}<tbody>${body}</tbody></table>`;
+}
+
+function writeReport(m) {
+  const parts = [];
+  parts.push(
+    `<div class="rpt-head">
+       <div class="rpt-title">
+         <span class="rpt-op">${esc(m.op)}</span>
+         ${m.word ? `<span class="rpt-word">${esc(m.word)}</span>` : ''}
+         <span class="rpt-status ${m.tone || 'info'}">${esc(m.status)}</span>
+       </div>
+       ${m.time ? `<div class="rpt-time"><span>${esc(m.time.label)}</span><b>${esc(m.time.value)}</b></div>` : ''}
+     </div>`);
+  if (m.answer) {
+    parts.push(
+      `<div class="rpt-answer">
+         <div class="rpt-answer-label">${esc(m.answer.label)}</div>
+         <p>${esc(m.answer.text)}</p>
+       </div>`);
+  }
+  if (m.note) parts.push(`<div class="rpt-note ${m.tone || 'info'}">${esc(m.note)}</div>`);
+  if (m.facts && m.facts.length) {
+    parts.push(
+      `<dl class="rpt-facts">${m.facts.map((f) =>
+        `<div><dt>${esc(f.label)}</dt><dd>${esc(f.value)}</dd></div>`).join('')}</dl>`);
+  }
+  if (m.path && m.path.path && m.path.path.length) {
+    parts.push(`<section class="rpt-section"><h3>Path from the root${m.path.found === false ? ' (where it would go)' : ''}</h3>${renderPathChips(m.path)}</section>`);
+  }
+  if (m.state) {
+    parts.push(`<section class="rpt-section"><h3>Tree state</h3>${stateTable(m.state)}</section>`);
+  }
+  reportBox.innerHTML = parts.join('');
+  reportBox.scrollTop = 0;
+  reportBox.classList.remove('fresh');
+  void reportBox.offsetWidth;              // restart the short reveal animation
+  reportBox.classList.add('fresh');
+}
+
+function locationFacts(info) {
+  return info.found
+    ? [
+        { label: 'Leaf', value: `#${info.leafOrdinal} of ${info.leafCount}` },
+        { label: 'Position in leaf', value: `${info.leafIndex + 1} of ${info.leaf.keys.length}` },
+        { label: 'Depth', value: `${info.leafDepth}` },
+      ]
+    : [
+        { label: 'Would belong in leaf', value: `#${info.leafOrdinal} of ${info.leafCount}` },
+        { label: 'Depth', value: `${info.leafDepth}` },
+      ];
+}
+
+// ----------------------------------------------------------------------------
+// ACTIONS
+// ----------------------------------------------------------------------------
+insertBtn.addEventListener('click', () => {
+  const word = insertWordEl.value.trim().toLowerCase();
+  if (!word) { log('Enter a word to insert.', 'error'); return; }
+  const meaningInput = insertMeaningEl.value.trim();
+
+  // Wrapped in try/catch: a manually-edited pointer can make the engine's
+  // recursive descent cyclic; it throws a clear Error instead of hanging.
+  try {
+    const before = snapshot();
+    const existedBefore = tree.search(word) !== undefined;
+    const t0 = performance.now();
+    const meaning = tree.insertWord(word, meaningInput);   // stores (word, meaning) together
+    const timeLabel = formatDuration(performance.now() - t0);
+    const after = snapshot();
+    const info = tree.describeSearch(word);
+
+    log(`${existedBefore ? 'Updated' : 'Inserted'} "<b>${esc(word)}</b>" in ${timeLabel} — <i>${esc(meaning)}</i>`, 'success');
+    writeReport({
+      op: 'Insert', word, tone: 'ok',
+      status: existedBefore ? 'Meaning updated' : 'Inserted',
+      time: { label: 'Insert time', value: timeLabel },
+      answer: { label: 'Stored meaning', text: meaning },
+      note: after.leaves > before.leaves ? 'A leaf was full, so it split into two.' : (existedBefore ? 'The word already existed; only its meaning changed.' : ''),
+      facts: locationFacts(info),
+      path: info,
+      state: { before, after },
+    });
+    insertWordEl.value = '';
+    insertMeaningEl.value = '';
+  } catch (err) {
+    log(`Insert failed: ${esc(err.message)}`, 'error');
+    writeReport({ op: 'Insert', word, tone: 'err', status: 'Failed', note: err.message, state: { after: snapshot() } });
+  }
+  renderTree();
+  renderStats();
+});
+
+searchBtn.addEventListener('click', () => {
+  const word = searchWordEl.value.trim().toLowerCase();
+  if (!word) { log('Enter a word to search for.', 'error'); return; }
+
+  renderTree();                          // fresh DOM so node refs in the map are current
+
+  let info, timeLabel, avgLabel = '';
+  try {
+    // performance.now() has sub-millisecond resolution. One search is so fast
+    // it is noisy, so we also time 1,000 repeats and report the average.
+    const t0 = performance.now();
+    info = tree.describeSearch(word);    // <-- engine computes the full root-to-leaf trail
+    timeLabel = formatDuration(performance.now() - t0);
+    if (!info.broken) {   // never repeat a search that already detected a cycle
+      const REPEATS = 1000;
+      const t1 = performance.now();
+      for (let r = 0; r < REPEATS; r++) tree.search(word);
+      avgLabel = formatDuration((performance.now() - t1) / REPEATS);
+    }
+  } catch (err) {
+    log(`Search failed: ${esc(err.message)}`, 'error');
+    return;
+  }
+  el('statSearchTimeHdr').textContent = timeLabel;
+
+  highlightPath(info);
+  renderSearchPath(info);
+  const s = snapshot();
+
+  if (info.broken) {
+    searchStatus.className = 'status-box missing';
+    searchStatus.textContent = `Search for "${word}" hit a pointer cycle and was aborted after ${timeLabel}. Use Reset Tree to recover.`;
+    searchMeaning.style.display = 'none';
+    searchMeaning.innerHTML = '';
+    log(`Search "<b>${esc(word)}</b>" -> aborted, pointer cycle detected (${timeLabel}).`, 'error');
+    writeReport({
+      op: 'Search', word, tone: 'err', status: 'Aborted',
+      time: { label: 'Search time', value: timeLabel },
+      note: 'A pointer cycle was detected while descending the tree (most likely from the Pointer Editor). Use Reset Tree to recover.',
+      state: { after: s },
+    });
+    return;
+  }
+
+  if (info.found) {
+    searchStatus.className = 'status-box found';
+    searchStatus.textContent = `"${word}" was found in ${timeLabel}.`;
+    searchMeaning.style.display = 'block';
+    searchMeaning.innerHTML = `<span class="meaning-word">${esc(word)}</span>${esc(info.value)}`;
+    log(`Search "<b>${esc(word)}</b>" -> found in leaf #${info.leafOrdinal}/${info.leafCount}, position ${info.leafIndex + 1}, in ${timeLabel}. Meaning: ${esc(info.value)}`, 'success');
+  } else {
+    searchStatus.className = 'status-box missing';
+    searchStatus.textContent = `"${word}" was not found in the tree (checked in ${timeLabel}).`;
+    searchMeaning.style.display = 'none';
+    searchMeaning.innerHTML = '';
+    log(`Search "<b>${esc(word)}</b>" -> not found (checked leaf #${info.leafOrdinal}/${info.leafCount}) in ${timeLabel}.`, 'action');
+  }
+
+  writeReport({
+    op: 'Search', word,
+    tone: info.found ? 'ok' : 'miss',
+    status: info.found ? 'Found' : 'Not found',
+    time: { label: 'Search time', value: timeLabel },
+    answer: info.found ? { label: 'Meaning', text: info.value } : null,
+    note: info.found ? '' : 'This word is not in the tree.',
+    facts: [...locationFacts(info), { label: 'Average of 1,000 runs', value: avgLabel }],
+    path: info,
+    state: { after: s },
+  });
+});
+
+deleteBtn.addEventListener('click', () => {
+  const word = deleteWordEl.value.trim().toLowerCase();
+  if (!word) { log('Enter a word to delete.', 'error'); return; }
+
+  try {
+    // Capture the meaning and location BEFORE deleting: afterwards the
+    // (word, meaning) pair is gone from the tree.
+    const before = snapshot();
+    const infoBefore = tree.describeSearch(word);
+    const meaningBeforeDelete = infoBefore.value;
+    const t0 = performance.now();
+    const existed = tree.delete(word);   // <-- direct call into the engine
+    const timeLabel = formatDuration(performance.now() - t0);
+    const after = snapshot();
+    const stillThere = tree.search(word);
+
+    if (existed) {
+      deleteMeaning.style.display = 'block';
+      deleteMeaning.innerHTML = `<span class="meaning-word">${esc(word)}</span>${esc(meaningBeforeDelete)}`;
+      log(`Deleted "<b>${esc(word)}</b>" in ${timeLabel} (was: <i>${esc(meaningBeforeDelete)}</i>) — tree rebalanced (borrow/merge as needed).`, 'success');
+    } else {
+      deleteMeaning.style.display = 'none';
+      deleteMeaning.innerHTML = '';
+      log(`Delete "<b>${esc(word)}</b>" -> no such key (checked in ${timeLabel}).`, 'error');
+    }
+
+    writeReport({
+      op: 'Delete', word,
+      tone: existed ? 'ok' : 'miss',
+      status: existed ? 'Deleted' : 'Not found',
+      time: { label: 'Delete time', value: timeLabel },
+      answer: existed ? { label: 'Removed meaning', text: meaningBeforeDelete } : null,
+      note: existed
+        ? (after.leaves < before.leaves ? 'A leaf became too empty and was merged with a neighbor.'
+          : after.height < before.height ? 'The tree got one level shorter.' : '')
+        : 'There was nothing to delete: this word is not in the tree.',
+      facts: existed ? [
+        { label: 'Was in leaf', value: `#${infoBefore.leafOrdinal} of ${infoBefore.leafCount}` },
+        { label: 'Position in leaf', value: `${infoBefore.leafIndex + 1} of ${infoBefore.leaf.keys.length}` },
+        { label: 'Depth', value: `${infoBefore.leafDepth}` },
+        { label: 'Search afterwards', value: stillThere === undefined ? 'not found (confirmed)' : 'STILL FOUND' },
+      ] : [],
+      state: { before, after },
+    });
+    deleteWordEl.value = '';
+  } catch (err) {
+    log(`Delete failed: ${esc(err.message)}`, 'error');
+    writeReport({ op: 'Delete', word, tone: 'err', status: 'Failed', note: err.message, state: { after: snapshot() } });
+  }
+  renderTree();
+  renderStats();
+});
+
+// ----------------------------------------------------------------------------
+// BULK LOAD
+// ----------------------------------------------------------------------------
+function bulkLoad() {
+  bulkBtn.disabled = true;
+  bulkBtn.textContent = 'Loading…';
+  log(`Inserting ${WORD_BANK.length.toLocaleString()} real English words, each with a meaning…`, 'action');
+
+  // A brief timeout lets the browser repaint the disabled button/log line
+  // before the synchronous bulk-insert loop blocks the main thread.
+  setTimeout(() => {
+    try {
+      const before = snapshot();
+      const entries = generateWordEntries(); // [word, meaning] pairs from bplus_tree.js
+      const t0 = performance.now();
+      for (const [word, meaning] of entries) tree.insert(word, meaning);
+      const ms = performance.now() - t0;
+      const after = snapshot();
+
+      renderTree();
+      renderStats();
+      log(`Bulk load complete: ${entries.length.toLocaleString()} words (with meanings) inserted in ${formatDuration(ms)}. Tree height is now ${after.height}.`, 'success');
+      writeReport({
+        op: 'Dataset load', tone: 'ok', status: 'Loaded',
+        time: { label: 'Total time', value: formatDuration(ms) },
+        facts: [
+          { label: 'Words inserted', value: `${entries.length.toLocaleString()} (each with a meaning)` },
+          { label: 'Average per word', value: formatDuration(ms / entries.length) },
+        ],
+        state: { before, after },
+      });
+    } catch (err) {
+      log(`Bulk load failed: ${esc(err.message)}`, 'error');
+      writeReport({ op: 'Dataset load', tone: 'err', status: 'Failed', note: err.message, state: { after: snapshot() } });
+    }
+    bulkBtn.disabled = false;
+    bulkBtn.textContent = 'Load Word Dataset';
+  }, 30);
+}
+
+bulkBtn.addEventListener('click', bulkLoad);
+
+// ----------------------------------------------------------------------------
+// CHANGE ORDER — the order fixes the tree's shape, so it can't be changed in
+// place. Collect every (word, meaning) pair from the leaf chain, build a new
+// tree with the requested order, and re-insert them all.
+// ----------------------------------------------------------------------------
+orderBtn.addEventListener('click', () => {
+  const raw = orderInput.value.trim();
+  const newOrder = Number(raw);
+  if (!/^\d+$/.test(raw) || newOrder < 3 || newOrder > 2000) {
+    log('Order must be a whole number between 3 and 2000.', 'error');
+    orderInput.value = currentOrder;
+    return;
+  }
+  if (newOrder === tree.order) { log(`Order is already ${newOrder}.`, 'info'); return; }
+
+  const before = snapshot();
+  const entries = tree.entries();
+  const t0 = performance.now();
+  const rebuilt = new BPlusTree(newOrder);
+  for (const [word, meaning] of entries) rebuilt.insert(word, meaning);
+  const ms = performance.now() - t0;
+
+  tree = rebuilt;
+  currentOrder = newOrder;
+  nodeElementMap.clear();
+  allNodes = [];
+  searchStatus.className = 'status-box';
+  searchStatus.textContent = 'No search yet.';
+  searchPath.style.display = 'none';
+  searchMeaning.style.display = 'none';
+  deleteMeaning.style.display = 'none';
+  inspector.textContent = 'Click a node in the visualizer to inspect it.';
+  renderPointerEditor(null);
+  renderTree();
+  renderStats();
+  const after = snapshot();
+
+  log(`Order changed ${before.order} -> ${after.order}; ${entries.length.toLocaleString()} words rebuilt in ${formatDuration(ms)}. Height ${before.height} -> ${after.height}.`, 'success');
+  writeReport({
+    op: 'Order change', tone: 'ok', status: `Order ${before.order} → ${after.order}`,
+    time: { label: 'Rebuild time', value: formatDuration(ms) },
+    note: after.keys === before.keys ? '' : `Warning: key count changed from ${before.keys} to ${after.keys}.`,
+    facts: [
+      { label: 'Words re-inserted', value: `${entries.length.toLocaleString()} (with meanings)` },
+      { label: 'Words preserved', value: after.keys === before.keys ? `yes, all ${after.keys.toLocaleString()}` : 'NO' },
+      { label: 'Min keys per non-root node', value: `${tree.minKeys}` },
+    ],
+    state: { before, after },
+  });
+});
+orderInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') orderBtn.click(); });
+
+
+resetBtn.addEventListener('click', () => {
+  tree = new BPlusTree(currentOrder);
+  nodeElementMap.clear();
+  allNodes = [];
+  searchStatus.className = 'status-box';
+  searchStatus.textContent = 'No search yet.';
+  searchPath.style.display = 'none';
+  searchMeaning.style.display = 'none';
+  searchMeaning.innerHTML = '';
+  deleteMeaning.style.display = 'none';
+  deleteMeaning.innerHTML = '';
+  inspector.textContent = 'Click a node in the visualizer to inspect it.';
+  renderPointerEditor(null);
+  el('statSearchTimeHdr').textContent = '–';
+  orderInput.value = currentOrder;
+  log(`Tree reset (order ${currentOrder}).`, 'action');
+  writeReport({ op: 'Reset', tone: 'info', status: `Empty tree, order ${currentOrder}`, state: { after: snapshot() } });
+  renderTree();
+  renderStats();
+});
+
+// Allow Enter key inside any text input to trigger its associated action.
+insertWordEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') insertBtn.click(); });
+searchWordEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchBtn.click(); });
+deleteWordEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') deleteBtn.click(); });
+
+// Initial paint, then auto-populate the tree with the real-word dataset
+// right away so there's something to search/delete/inspect immediately —
+// no manual button click required. The "Load Word Dataset" button still
+// works afterwards if you want to re-run the bulk insert (e.g. after a
+// Reset Tree) or add a second copy of the dataset on top.
+renderStats();
+renderTree();
+log(`B+ Tree ready (order 64). Auto-loading ${WORD_BANK.length.toLocaleString()} real English words…`, 'info');
+bulkLoad();
+</script>
+
+</body>
+</html>
